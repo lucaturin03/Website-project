@@ -1,0 +1,166 @@
+body{font-family: Arial, sans-serif;}
+button[type="reset"]{
+  display: inline-block;
+  font-weight: bold;
+  text-align: center;
+  background-color: transparent;
+  border-color: red;
+  color: red;
+  cursor: pointer;
+  border: 3px solid;
+}
+button[type="submit"]{
+  display: inline-block;
+  font-weight: bold;
+  text-align: center;
+  background-color: transparent;
+  border-color: green;
+  cursor: pointer;
+  border: 3px solid;
+}
+a{font-size: 45px;}
+.dark-mode .loginl{background-color: black;} 
+.loginl{
+  display: inline-block;
+  font-weight: bold;
+  text-align: center;
+  border-color: blue !important;
+  color: blue;
+  cursor: pointer;
+  border: 3px solid;
+}
+input{
+  display: block;
+  margin: 5px auto;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 15px;
+  box-sizing: border-box;
+  font-size: 55px;
+}
+.selez{
+  margin: 5px auto;
+  padding: 0px;
+  border: 3px solid #ccc;
+  border-radius: 4px;
+  font-size: 55px;
+}
+table{
+  height: 70%;
+}
+.selez option{
+  font-size: 30px;
+  color: black;
+}
+@media only screen and (min-width: 1000px){
+  body{
+    font-size: 35px;
+  }
+  input{
+    width: 50%;
+    height: 70px;
+  }
+  .selez{
+    width: 50%;
+    height: 70px;
+    border-radius: 15px;
+  }
+  a{
+    font-size: 45px;
+  }
+  button[type="reset"]{
+    padding: 20px;
+    font-size: 30px;
+    border-radius: 10px;
+  }
+  button[type="submit"]{
+    padding: 20px;
+    font-size: 30px;
+    border-radius: 10px;
+  }
+  .loginl{
+    padding: 20px;
+    font-size: 30px;
+    border-radius: 10px;
+  }
+  .loginp{
+    padding: 20px;
+    font-size: 30px;
+    border-radius: 10px;
+  }
+  table{
+    width: 80%;
+    height: 70%;
+  }
+  table th{
+    height: 120px;
+    font-size: 50px;
+  }
+  table td{
+    font-size: 50px;
+    height: 90px;
+  } 
+  input[type="checkbox"] {
+    transform: scale(0.9);
+    vertical-align: middle;
+  }
+  .dark-mode{
+    background-color: #000000;
+    color: #ffffff;
+  }
+  .dark-mode button[type="reset"]{
+    background-color: #000000;
+    color: #ffffff;
+  }
+}
+
+@media only screen and (max-width: 999px){
+  table{
+    width: 100%;
+  }
+  table td{
+    font-size: 45px;
+  }
+  input[type="checkbox"] {
+    transform: scale(0.9);
+    vertical-align: middle;
+  }
+  body{
+    font-size: 45px;
+  }
+  button[type="reset"]{
+    padding: 40px;
+    font-size: 70px;
+    border-radius: 30px;
+  }
+  button[type="submit"]{
+    padding: 40px;
+    font-size: 70px;
+    border-radius: 30px;
+  }
+  a{font-size: 70px;}
+  .loginl{
+    padding: 20px;
+    font-size: 70px;
+    border-radius: 30px;
+  }
+  .loginp{
+    padding: 20px;
+    font-size: 70px;
+    border-radius: 30px;
+  }
+  input{
+    width: 95%;
+    height: 100px;
+  }
+  .selez{
+    width: 95%;
+    height: 100px;
+    border-radius: 15px;
+  }
+  .dark-mode button[type="reset"]{
+    background-color: #000000;
+    color: #ffffff;
+  }
+}
+

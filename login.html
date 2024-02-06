@@ -1,0 +1,22 @@
+<html lang="it">
+<head>
+    <title>Login</title>
+    <link rel="stylesheet" href="base.css" />
+</head>
+<body>
+    <script type="text/javascript" src="dark.js"></script>
+    <div class="pglogin">
+        <center><p1 style="font-size: 80px; font-style: bold;">LOGIN</p1></center>
+    </div>
+    <div class="container">
+    <center>
+        <input autocomplete="current-password" class="campop" type="password" id="password" placeholder="PASSWORD"><br>
+        <button class="logl" onclick="login()">ACCEDI</button>
+    </center>
+    <script src="login.js"></script>
+</body>
+<script>
+    document.addEventListener("keydown", function(event){if(event.key === 'Enter'){login();}});
+    window.onload = function(){var input = document.getElementById("password"); input.select();};
+</script>
+</html>
