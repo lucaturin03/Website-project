@@ -65,6 +65,10 @@
             background-color: #686E23;
             box-shadow: 0 0 #686E23;
         }
+        .qifila2:active{
+            background-color: #312361;
+            box-shadow: 0 0 #312361;
+        }
         .dark-mode .selez{
             background-color: #000000;
             color: #C4C4C4;
@@ -81,7 +85,7 @@
         .qfila1{color: #00875B;}
         .qfila2{color: #1B688F;}
         .qifila1{color: #A4AD38;}
-        .qifila2{color: #A4AD38;}
+        .qifila2{color: #573EAB;}
         @media only screen and (min-width: 1326px){
             .pfila1{
                 padding: 20px;
@@ -204,11 +208,11 @@
     <button class="pfila2" type="button" onclick="window.location.href = 'tabellaorg.php';">TABELLA<br>ORGANIZZATORI</button></center><br><br><br>
     <center><button class="sfila1" type="button" onclick="window.location.href = 'tabellaelimina.php';">GESTIONE<br>INVITATI</button>
     <button class="sfila2" type="button" onclick="window.location.href = 'rimorg.php';">GESTIONE<br>ORGANIZZATORI</button></center><br><br><br>
-    <center><button class="tfila1" type="button" onclick="window.location.href = 'tabnonpagato.php';">GESTIONE<br>PAGANTI</button>
+    <center><button class="tfila1" type="button" onclick="window.location.href = 'tabnonpagato.php';">LISTA<br>D'ATTESA</button>
     <button class="tfila2" type="button" onclick="window.location.href = 'insorg.php';">INSERIMENTO<br>ORGANIZZATORE</button></center><br><br><br>
     <center><button class="qfila1" type="button" onclick="window.location.href = 'tabellaid.php';">TABELLA<br>STATO INVITATI</button>
     <button class="qfila2" type="button" onclick="window.location.href = 'tabellasoldi.php';">TABELLA<br>SOLDI</button></center><br><br><br>
-    <center><button class="qifila1" type="button" onclick="window.location.href = 'tabellaerimossi.php';">TABELLA<br>INV RIMOSSI</button>
+    <center><button class="qifila1" type="button" onclick="window.location.href = 'tabellaerimossi.php';">TABELLA<br>RIMBORSI</button>
     <button class="qifila2" type="button" onclick="showPopup()">MODIFICA<br>PREZZO</button></center></center><br><br><br><br>
     <center><a href=index.php><img src=casa.svg style='width: 100px; height: 70px'></a></center>
 
@@ -251,6 +255,7 @@
             id.style.margin = "0px";
             id.style.display = "";
             invrim.style.display = "";
+            invrim.style.margin = "0px";
             prezzo.style.display = "none";
         }
         else if(selectedValue === "2"){
@@ -283,9 +288,11 @@
     });
     const socket = io('192.168.0.113:3000');
     function showPopup(){socket.emit('check-prezzo');}
+    let prezzoattuale
     socket.on('check-prezzo-response', (prezzoatt)=>{
+        if(prezzoatt.prezzo != null) prezzoattuale = prezzoatt.prezzo;
         if(prezzoatt.stato == 1){
-            prezzo = prompt("Il prezzo attuale è: " + prezzoatt.prezzo + "\nModifica il prezzo:") 
+            prezzo = prompt("Il prezzo attuale è: " + prezzoatt.prezzo + "\nInserisci il prezzo desiderato:") 
             prezzo = parseFloat(prezzo);
             if(prezzo !== null && !isNaN(prezzo)) socket.emit('modificaPrezzo', prezzo); 
         }
@@ -294,12 +301,12 @@
             prezzo = parseFloat(prezzo);
             if(prezzo !== null && !isNaN(prezzo)) socket.emit('ins-prezzo', prezzo);
         }
-        else if(prezzoatt.stato == 2) alert("Ci sono degli invitati, impossibile modificare il prezzo");
-        else setTimeout(alert("Prezzo modificato con successo"), 2000);
+        else if(prezzoatt.stato == 2) alert("Sono presenti degli invitati, impossibile modificare il prezzo!");
+        else setTimeout(alert("Prezzo modificato con successo!\n" + prezzoattuale + " -> " + prezzo), 2000);
     });
     socket.on('ins-prezzo-response', (response)=>{
-        if(response == 1) alert("Prezzo inserito con successo");
-        else alert("Errore. Prezzo inserito con successo");
+        if(response == 1) alert("Prezzo inserito con successo!");
+        else alert("Errore. Prezzo NON inserito con successo");
     });
 </script>   
 </body>

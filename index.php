@@ -349,7 +349,7 @@
     }
 
     socket.on('inserisci-record-response', (data)=>{
-        if(data.response == '0') alert('Invitato inserito con successo con ID pagamaneto: ' + data.idp);
+        if(data.response == '0') alert('Invitato inserito con successo con ID pagamento: ' + data.idp);
         else alert('Errore durante l\'inserimento dell\'invitato');
     });
 

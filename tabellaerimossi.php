@@ -270,7 +270,7 @@
         </div>
     </form>
     <div class="container1">
-        <div class="column"><h2 id="ninv">NESSUN INVITATO</h2></div>
+        <div class="column"><h2 id="ninv">NESSUNO DA RIMBORSARE</h2></div>
         <div class="column1"><h2 style="color: green;" id="npresenti">NESSUN PRESENTE</h2></div>
     </div>
 	<div class="container2"></div>
@@ -278,6 +278,7 @@
         <table id="invitatiTable" align="center">
             <thead>
                 <tr>
+                    <th>ID</th>
                     <th>NOME</th>
                     <th>COGNOME</th>
                     <th>RIMBORSO</th>
@@ -298,6 +299,10 @@
             if(document.body.classList.contains("dark-mode")) row.style.backgroundColor = "#969696";
             else row.style.backgroundColor = "#D6D6D6";
 
+            const idrCell = document.createElement('td');
+            idrCell.textContent = data.ID_RIMBORSO? data.ID_RIMBORSO : 0;
+            row.appendChild(idrCell);
+
             const nomeCell = document.createElement('td');
             nomeCell.textContent = data.NOME;
             row.appendChild(nomeCell);
@@ -310,7 +315,10 @@
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.id = data.ID;
-            if(data.RIMBORSO === 1) checkbox.checked = true;
+            if(data.RIMBORSO === 1){
+                checkbox.checked = true;
+                checkbox.disabled = true;
+            } 
             else checkbox.checked = false;
             presenzaCell.appendChild(checkbox);
             row.appendChild(presenzaCell);
@@ -336,6 +344,12 @@
         socket.on('updcR', (data)=>{
             const checkbox = document.querySelector(`input[type=checkbox][id="${data.id}"]`);
             if(checkbox) checkbox.checked = data.stato;
+            if(data.stato==1) checkbox.disabled = true;
+        });
+
+        socket.on('updIdRimborso', (data)=>{
+            const row = document.getElementById(data.id);
+            if(row.cells[0]) row.cells[0].innerHTML = data.rimborsoId;
         });
 
         socket.on('nuovaRigaR',(nuovaRiga)=>{
@@ -344,6 +358,10 @@
             row.id = nuovaRiga.id;
             if(document.body.classList.contains("dark-mode")) row.style.backgroundColor = "#969696";
             else row.style.backgroundColor = "#D6D6D6";
+
+            const idrCell = document.createElement('td');
+            idrCell.textContent = nuovaRiga.ID_RIMBORSO? nuovaRiga.ID_RIMBORSO : 0;
+            row.appendChild(idrCell);
 
             const nomeCell = document.createElement('td');
             nomeCell.textContent = nuovaRiga.nome;
@@ -379,24 +397,27 @@
     }, 500);
 
     document.addEventListener("DOMContentLoaded", function(){
-        function contaInvi(){
-            var tab = document.getElementById('invitatiTable');
-            var numeroRighe = tab.rows.length-1;
-            var risultato = document.getElementById('ninv');
-            if(numeroRighe != 0) risultato.textContent = `N° INVITATI: ${numeroRighe}`;  
-        }
-
         function contaCheckbox(){
-            const checkboxes = document.querySelectorAll('input[type=checkbox]');
             let conteggio = 0;
+            const checkboxes = document.querySelectorAll('input[type=checkbox]');
             checkboxes.forEach(function(checkbox){
                 if(checkbox.checked) conteggio++;
             });
             const risultato = document.getElementById('npresenti');
             if(conteggio>0) risultato.textContent = `N° RIMBORSATI: ${conteggio}`; 
             else risultato.textContent = `NESSUN PRESENTE`;
+
+            return conteggio;
         }
-        setInterval(function(){contaCheckbox();contaInvi();}, 100);
+
+        function contaInvi(){
+            var tab = document.getElementById('invitatiTable');
+            var numeroRighe = tab.rows.length-1;
+            var risultato = document.getElementById('ninv');
+            var nRiborsati = contaCheckbox();
+            if(numeroRighe != 0) risultato.textContent = `DA RIMBORSARE: ${numeroRighe-nRiborsati}`;  
+        }
+        setInterval(function(){contaInvi();}, 100);
     });
 
     document.addEventListener("keydown", function(event){

@@ -1,13 +1,15 @@
 const express = require('express');
 const app = express();
 const mysql = require('mysql2');
-const mysqlpr = require('mysql2/promise');
 const cors = require('cors');
 const http = require('http');
 const server = http.createServer(app);
 const io = require('socket.io')(server, {cors: { origin:"*"}});
 const bodyParser = require('body-parser');
 const TelegramBot = require('node-telegram-bot-api');
+const fs = require('fs');
+const qr = require('qrcode');
+const crypto = require('crypto');
 //^ Costanti inizializzate con i moduli per far funzionare questo server Node ^
 
 //Credenziali per connessione a database
@@ -24,10 +26,30 @@ const db = mysql.createConnection({
   database: global.DB
 });
 
+//Variabili utilizzate globalmente
+global.prezzo = 0;
+const waitingQueue = [];
+const signalQueue = [];
+let currentPageOwner = null;
+let idInvitati = [];
+let idOrganizzatori = [];
+
 //Inizializzazione bot Telegram
 const token = '6769367117:AAEj0_dWkgkMm68v5b7yGhin1iA6ETImWbo';
 const bot = new TelegramBot(token, {polling: true});
 bot.data = {};
+
+//Funzione eliminazione invitati
+function EliminaInvitati(Id, Nome, Cognome, idtg){
+  db.query('INSERT INTO rimossi (ID, NOME, COGNOME, ID_TG) VALUES (?, ?, ?, ?)', [Id, Nome, Cognome, idtg], (error, results)=>{
+    if(error) console.log("Errore");
+    else{
+      const nuovaRiga = {id: Id, nome: Nome, cognome: Cognome, stato: 0};
+      io.emit('nuovaRigaR', nuovaRiga);
+      console.log("Inserito nella tabella rimossi");
+    }
+  });
+}
 
 //Gestione comando /start
 bot.onText(/\/start/, (msg) => {
@@ -72,33 +94,6 @@ bot.on('callback_query', (query)=>{
     default:
       break;
   }
-  /*if(query.data === 'yes'){
-    bot.deleteMessage(chatId, query.message.message_id);
-    bot.sendMessage(chatId, "Inserisci il tuo nome.");
-    bot.data[chatId].state = GETTING_N;
-  } 
-  else if(query.data === 'no'){
-    bot.sendMessage(chatId, "RICHIESTA ANNULLATA");
-    bot.deleteMessage(chatId, query.message.message_id);
-  }
-  else if(query.data === 'no1'){
-    bot.deleteMessage(chatId, query.message.message_id);
-    bot.sendMessage(chatId, "Inserisci l'ID che ti è stato fornito.");
-    bot.data[chatId].state = GETTING_ID;
-  } 
-  else if(query.data === 'yes1'){
-    const userId = query.from.id;
-    verificaIdTg(query.message, userId, chatId);
-    bot.deleteMessage(chatId, query.message.message_id);
-  }
-  else if(query.data === 'yes2'){
-    EliminaDaLista(query.message, global.idr, chatId);
-    bot.deleteMessage(chatId, query.message.message_id);
-  }
-  else if(query.data === 'no2'){
-    bot.sendMessage(chatId, "OPERAZIONE ANNULLATA");
-    bot.deleteMessage(chatId, query.message.message_id);
-  }*/
 });
 
 //Gestione comando /partecipa
@@ -137,6 +132,7 @@ function invio(chatId, userId){
   InserisciPagato(nC, null, global.nome, global.cognome, 0, userId);
   bot.sendMessage(chatId, "RICHIESTA INVIATA CON SUCCESSO");
   bot.sendMessage(chatId, "Il tuo ID partecipante è: " + nC);
+  bot.sendMessage(chatId, "STATO 🟨: non hai ancora pagato, sei in ATTESA.");
   bot.sendMessage(chatId, "Una volta pagato verrai messo in lista e riceverai una notifica di conferma.");
 }
 
@@ -156,14 +152,22 @@ function ottieniId(message){
   bot.data[chatId].state = null;
 }
 function verificaIdTg(message, userId, chatId){
-  db.query('SELECT PAGATO FROM checkpagato WHERE ID_TG = ?', userId, (error, results)=>{
+  db.query('SELECT ID, PAGATO, NOME, COGNOME FROM checkpagato WHERE ID_TG = ?', userId, (error, results)=>{
     if(error) console.log("Errore");
     else{
       if(results.length === 1){
-        if(results[0].PAGATO == 1) bot.sendMessage(chatId, "STATO: hai pagato, sei in lista.");
-        else bot.sendMessage(chatId, "STATO: non hai pagato, non sei in lista.");
+        if(results[0].PAGATO == 1)bot.sendMessage(chatId, "STATO 🟩: hai pagato, SEI in lista.");
+        else bot.sendMessage(chatId, "STATO 🟨: non hai ancora pagato, sei in ATTESA.");
       }
-      else bot.sendMessage(chatId, "ID non trovato nel database.");
+      else{
+        db.query('SELECT RIMBORSO FROM rimossi WHERE ID_TG = ?', userId, (error, results) => {
+          if(error) console.log("Errore"); 
+          else{
+            if(results.length > 0 && results[0].RIMBORSO != 1) bot.sendMessage(chatId, "STATO 🟧: in ATTESA di rimborso."); 
+            else bot.sendMessage(chatId, "ID non trovato nel database.");
+          }
+        });
+      }      
     }
   });
 }
@@ -173,13 +177,58 @@ function verificaIdNTg(message, userId){
     if(error) console.log("Errore");
     else{
       if(results.length === 1){
-        if(results[0].PAGATO == 1) bot.sendMessage(chatId, "STATO: hai pagato, sei in lista.");
-        else bot.sendMessage(chatId, "STATO: non hai pagato, non sei in lista.");
+        if(results[0].PAGATO == 1) bot.sendMessage(chatId, "STATO 🟩: hai pagato, SEI in lista.");
+        else bot.sendMessage(chatId, "STATO 🟨: non hai ancora pagato, sei in ATTESA.");
       }
-      else bot.sendMessage(chatId, "ID non trovato nel database.");
+      else{
+        db.query('SELECT RIMBORSO, ID_RIMBORSO FROM rimossi WHERE ID = ?', userId, (error, results) => {
+          if(error) console.log("Errore"); 
+          else{
+            if(results.length > 0 && results[0].RIMBORSO != 1) bot.sendMessage(chatId, "STATO 🟧: in ATTESA di rimborso."); 
+            else if(results.length > 0 && results[0].RIMBORSO == 1) bot.sendMessage(chatId, "STATO 🟦: rimborso ESEGUITO con codice " + results[0].ID_RIMBORSO); 
+            else bot.sendMessage(chatId, "ID non trovato nel database.");
+          }
+        });
+      }   
     }
   });
 }
+
+//Comando recupera QrCode
+bot.onText(/\/qrcode/, (msg)=>{
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  db.query('SELECT ID, PAGATO, NOME, COGNOME FROM checkpagato WHERE ID_TG = ?', userId, (error, results)=>{
+    if(error) console.log("Errore");
+    else{
+      if(results.length === 1){
+        if(results[0].PAGATO == 1) qrGenerator(userId, results[0].ID, results[0].NOME, results[0].COGNOME);
+        else bot.sendMessage(chatId, "Non hai ancora pagato."); 
+      }
+      else bot.sendMessage(chatId, "Non sei registrato con questo bot."); 
+    }   
+  });
+});
+
+//Generatore QrCode
+function qrGenerator(chatId, id, nome, cognome){
+  const testo = id + "/" + nome + "/" + cognome;
+  const hash = crypto.createHash('sha256').update(testo).digest('hex');
+  const options ={
+    color: {dark: '#000', light: '#fff'},
+    width: 200, height: 200 
+  };
+  percorsoImmagineQR = "./tempqrcode.png";
+  qr.toFile(percorsoImmagineQR, hash, options, async (err) => {
+    if(err) console.error('Errore durante la creazione del QRCode:', err);
+    else{
+      bot.sendMessage(chatId, 'Ecco il tuo QrCode, conservalo.');
+      await bot.sendPhoto(chatId, percorsoImmagineQR);
+      fs.unlinkSync(percorsoImmagineQR);
+      console.log('QRCode creato con successo.');
+    }
+  });
+} 
 
 //Gestione comando /recupera
 bot.onText(/\/recupera/, (message)=>{
@@ -204,6 +253,7 @@ bot.onText(/\/rimozione/, (message)=>{
   bot.sendMessage(chatId, "Potrai richiedere la rimozione fino a 7 giorni prima del giorno della festa.");
   setTimeout(()=>{bot.sendMessage(chatId, "Con la richiesta di rimozione verrai cancellato/a dalla lista e NON potrai partecipare alla festa.");},100);
   setTimeout(()=>{bot.sendMessage(chatId, "Inoltre dovrai venire TU a riprendere i soldi dati.");},200);
+  setTimeout(()=>{bot.sendMessage(chatId, "ATTENZIONE: Salvati l'ID partecipante, una volta eseguito il rimborso sarà l'unico modo di rivendicare eventuali incongruenze.");},200);
   setTimeout(()=>{
     db.query('SELECT ID FROM checkpagato WHERE ID_TG =?', userId, (error, results)=>{
       if(error) console.log("Errore");
@@ -216,7 +266,7 @@ bot.onText(/\/rimozione/, (message)=>{
           }
         }
         else{
-          bot.sendMessage(chatId, "Inserisci l'ID partecipante da rimuovere");
+          bot.sendMessage(chatId, "Inserisci l'ID del partecipante da rimuovere");
           bot.data[chatId].state = GETTING_IDR;
         }
       }
@@ -231,43 +281,44 @@ function richiediIdR(message){
 }
 function RimuoviMessage(chatId){
   const keyboard = {reply_markup:{inline_keyboard:[[{text: 'Si', callback_data: 'yes2'}, {text: 'No', callback_data: 'no2'}]]}};
-  bot.sendMessage(chatId, "Vuoi davvero essere rimosso/a dalla lista della festa?", keyboard);
+  bot.sendMessage(chatId, "Vuoi davvero essere rimosso/a?", keyboard);
 }
 function EliminaDaLista(message, userId, chatId){
-  db.query('SELECT ID_PAGATO, NOME, COGNOME FROM checkpagato WHERE ID = ?', userId, (error, results)=>{
+  db.query('SELECT ID_PAGATO, NOME, COGNOME, ID_TG FROM checkpagato WHERE ID = ?', userId, (error, results)=>{
     setTimeout(()=>{ 
       if(error) console.log("Errore");
       else{
         if(results.length>0){
+          const idTg = results[0].ID_TG != null? results[0].ID_TG : null;
           db.query('SELECT ID_ORGANIZZATORE FROM invitati WHERE ID = ?', results[0].ID_PAGATO, (error, results)=>{
             if(error) console.log("Errore");
             else global.orga = results[0].ID_ORGANIZZATORE;
           });
           const risultatoNome = results[0].NOME;
           const risultatoCognome = results[0].COGNOME;
-          db.query('INSERT INTO rimossi (ID, NOME, COGNOME) VALUES (?, ?, ?)', [userId, results[0].NOME, results[0].COGNOME], (error, results)=>{
+          EliminaInvitati(userId, risultatoNome, risultatoCognome, idTg);
+          db.query('DELETE FROM checkpagato WHERE ID = ?', userId, (error, results)=>{
             if(error) console.log("Errore");
-            else{
-              console.log("Inserito nella tabella rimossi");
-              const nuovaRiga = {id: userId, nome: risultatoNome, cognome: risultatoCognome, stato: 0};
-              io.emit('nuovaRigaR', nuovaRiga);
+            else{  
+              console.log("Eliminato dalla lista paganti");
+              io.emit('updateTotR', {ido: global.orga, add: global.prezzo});
+              io.emit('eliminaRecordPagante', {status: 200}, userId);
             }
           });
           if(results[0].ID_PAGATO!=null){
             db.query('DELETE FROM invitati WHERE ID = ?', results[0].ID_PAGATO, (error, results)=>{
               if(error) console.log("Errore");
-              else console.log("Eliminato dalla lista invitati");
+              else{
+                console.log("Eliminato dalla lista paganti");
+                bot.sendMessage(chatId, "STATO 🟥: RIMOSSO/A dalla lista invitati"); 
+                io.emit('eliminaRecordPagante', {status: 200}, userId);
+              }
             });
           }
-          db.query('DELETE FROM checkpagato WHERE ID = ?', userId, (error, results)=>{
-            if(error) console.log("Errore");
-            else{
-              bot.sendMessage(chatId, "Stato: RIMOSSO/A dalla lista invitati");  
-              console.log("Eliminato dalla lista paganti");
-              numeriGenerati.delete(userId);
-              io.emit('updateTotR', {ido: global.orga, add: global.prezzo});
-            }
-          });
+          else{
+            console.log("Eliminato dalla lista invitati");
+            bot.sendMessage(chatId, "STATO 🟥: RIMOSSO/A dalla lista di attesa");
+          }
         }
         else bot.sendMessage(chatId, "Nessun invitato trovato associato all'ID inserito"); 
       }  
@@ -275,7 +326,7 @@ function EliminaDaLista(message, userId, chatId){
   });
 };
 
-//Variabili utilizzate globalmente dal bot di Telegram
+//Costanti utilizzate globalmente dal bot di Telegram
 const GETTING_N = 'getting_name';
 const GETTING_C = 'getting_surname';
 const GETTING_ID = 'getting_id';
@@ -290,23 +341,44 @@ bot.on('text', (msg)=>{
   else if(bot.data[chatId] && bot.data[chatId].state === GETTING_IDR) richiediIdR(msg);
 });
 
-//Avvia server Node e specifico porta sulla quale il server ascolta
+//Avvio server Node e specifico porta sulla quale ascolta, controllo la presenza del prezzo
 server.listen(3000,()=>{
   console.log("Server avviato sulla porta 3000");
   prezzo();
+  GetIdInvitati();
+  GetIdOrganizzatori();
 });
 
-//Variabili utilizzate globalmente
-global.prezzo = 0;
-const waitingQueue = [];
-const signalQueue = [];
-let currentPageOwner = null;
+//Id rimborso generati
+let idRimborso = new Set();
 
 //Connessione al server database
 db.connect((err)=>{
   if(err) console.error('Errore nella connessione al database: ' + err.message); 
   else console.log('Connessione al server database stabilita');
 });
+
+//Ottengo idInvitati presenti nel database
+function GetIdInvitati(){
+  db.query('SELECT ID FROM invitati', (err, results)=>{
+    if(err) throw err;
+    console.log('Id invitati acquisiti correttamente');
+    results.forEach(result => {
+      idInvitati[result.ID] = result.ID; 
+    });
+  });
+}
+
+//Ottengo idOrganizzatori presenti nel database
+function GetIdOrganizzatori(){
+  db.query('SELECT ID FROM organizzatori', (err, results)=>{
+    if(err) throw err;
+    console.log('Id organizzatori acquisiti correttamente');
+    results.forEach(result => {
+      idOrganizzatori[result.ID] = result.ID; 
+    });
+  });
+}
 
 //Selezione del prezzo dalla tabella soldi per gestione cookie pagina index.php
 function prezzo(){
@@ -329,7 +401,7 @@ function generaNumeroCasuale(){
 
 //Connessione nuovo utente
 io.on("connection",(socket)=>{
-  console.log("Connesso con id: " + socket.id);
+  console.log("Nuova connessione con id: " + socket.id);
 
 //Richiesta organizzatori per popolare menù a tendina nella pagina index.php e tabnonpagato.php
   socket.on('requestOrg', ()=>{
@@ -394,17 +466,14 @@ io.on("connection",(socket)=>{
     db.query ('SELECT PREZZO FROM soldi WHERE ID = 0', (err, results)=>{
       if(results.length>0){
         const prezzotrovato = results[0].PREZZO;
-        db.query('SELECT ID FROM invitati', (err, results)=>{
-          if(err) throw err;
-          if(results.length>0){
-            console.log("Ci sono degli invitati, impossibile aggiornare il prezzo");
-            io.emit('check-prezzo-response', {stato: 2, prezzo: null});
-          }
-          else{
-            console.log('Prezzo presente');
-            socket.emit('check-prezzo-response', {stato: 1, prezzo: prezzotrovato});
-          }
-        });
+        if(idInvitati.length>0){
+          console.log("Sono presenti degli invitati, impossibile aggiornare il prezzo");
+          io.emit('check-prezzo-response', {stato: 2, prezzo: null});
+        }
+        else{
+          console.log('Prezzo presente');
+          socket.emit('check-prezzo-response', {stato: 1, prezzo: prezzotrovato});
+        }
       }
       else{
         console.log('Prezzo non presente');
@@ -438,7 +507,7 @@ io.on("connection",(socket)=>{
     );
   });
 
-//Eliminazione di un invitato da tabelle: checkpagato, invitati
+//Eliminazione di un invitato da tabelle: checkpagato, invitati; inserimento in tabella: rimossi
   socket.on('eliminarecord', (id, button)=>{
     db.query('SELECT ID_ORGANIZZATORE FROM invitati WHERE ID = ?', id, (err, results)=>{
       if(err) throw err;
@@ -446,22 +515,18 @@ io.on("connection",(socket)=>{
     });
     db.query('DELETE FROM invitati WHERE ID = ?', id, (err, results)=>{
       if(err) throw err;
+      idInvitati[id] = undefined;
       db.query('SELECT ID, NOME, COGNOME, ID_TG FROM checkpagato WHERE ID_PAGATO = ?', id, (err, results)=>{
         if(results.length>0){
           const risultatoId = results[0].ID;
           const risultatoNome = results[0].NOME;
           const risultatoCognome = results[0].COGNOME;
-          const idtg = results[0].ID_TG;
-          db.query('INSERT INTO rimossi (ID, NOME, COGNOME) VALUES (?, ?, ?)', [risultatoId, results[0].NOME, results[0].COGNOME], (error, results)=>{
-            if(error) console.log("Errore");
-            else{
-              const nuovaRiga = {id: risultatoId, nome: risultatoNome, cognome: risultatoCognome, stato: 0};
-              io.emit('nuovaRigaR', nuovaRiga);
-              console.log("Inserito nella tabella rimossi");
-              if(idtg!=null) bot.sendMessage(idtg, "Stato: RIMOSSO/A dalla lista");
-            }
-          });
-          numeriGenerati.delete(risultatoId);
+          const idtg = results[0].ID_TG? results[0].ID_TG : null;
+          EliminaInvitati(risultatoId, risultatoNome, risultatoCognome, idtg);
+          if(idtg!=null){
+            bot.sendMessage(idtg, "STATO 🟥: RIMOSSO/A dalla lista");
+            setTimeout(()=>{bot.sendMessage(idtg, "ATTENZIONE: Il tuo ID partecipante é: " + risultatoId  + ", una volta eseguito il rimborso sarà l'unico modo di rivendicare eventuali incongruenze. Conservalo con cura!");},200);
+          }
           io.emit('eliminaRecordPagante', {status: 200}, risultatoId);
           io.emit('updateTotR', {ido: global.orga, add: global.prezzo});
         }
@@ -492,6 +557,7 @@ io.on("connection",(socket)=>{
               if(err){return db.rollback(()=>{throw err;});}
               console.log("Tutti gli invitati eliminati - commit");
               io.emit('RimossiTutti');
+              idInvitati.length = 0;
               numeriGenerati.clear();
             });
           } 
@@ -575,21 +641,25 @@ io.on("connection",(socket)=>{
     db.query('SELECT ID FROM invitati WHERE ID_ORGANIZZATORE = ?', id, (err, results)=>{
       if(err) throw err;
       io.emit('setio', results);
-    });
-    if(results>0){
-      for(let i=0; i<results.length; i++){
-        db.query('DELETE FROM checkpagato WHERE ID_PAGATO = ?', results[i].ID, (err, results)=>{
-          if(err) throw err;
-          else console.log("Eliminati invitati con ID: " + results[i].ID + " dalla tabella paganti");
-        });
+      if(results>0){
+        for(let i=0; i<results.length; i++){
+          db.query('DELETE FROM checkpagato WHERE ID_PAGATO = ?', results[i].ID, (err, results)=>{
+            if(err) throw err;
+            else{
+              idInvitati[results[i].ID] = undefined;
+              console.log("Eliminato invitato con ID: " + results[i].ID + " dalla tabella paganti");
+            }
+          });
+        }
       }
-    }
+    });
     db.query('DELETE FROM invitati WHERE ID_ORGANIZZATORE = ?', id, (err, results)=>{
       if(err) throw err;
       console.log("Eliminati gli invitati con id sopra collegati all'organizzatore: " + id);
       db.query('DELETE FROM organizzatori WHERE ID=?', id, (err, results)=>{
         if(err) throw err;
         console.log("Eliminato l'organizzatore con id: " + id);
+        idOrganizzatori[id] = undefined;
         io.emit('euno', {status: 200}, button);
       });
     });
@@ -616,6 +686,8 @@ io.on("connection",(socket)=>{
                 if(err){return db.rollback(()=>{throw err;});}
                 console.log("Tutti gli organizzatori eliminati - commit");
                 io.emit('RimossiTutti');
+                idInvitati.length = 0;
+                idOrganizzatori.length = 0;
                 numeriGenerati.clear();
               });
             } 
@@ -634,87 +706,81 @@ io.on("connection",(socket)=>{
     InserisciInvitatoT(data.nome, data.cognome, data.orga, true);
   });
 
-//Inserimento di un invitato invitato 
-  function InserisciInvitatoT(nome, cognome, orga, check){
-    return new Promise((resolve, reject)=>{
-      async function findFreeID(){
-        const connection = await mysqlpr.createConnection({
-          host: global.HOST,
-          user: global.USER,
-          password: global.PSW,
-          database: global.DB
-        });
-        let idc = 0;
-        while(true){
-          const [rows] = await connection.query('SELECT ID FROM invitati WHERE ID = ?', [idc]);
-          if(rows.length === 0){
-            console.log('ID libero trovato:', idc);
-            const query = "INSERT INTO invitati (ID, ID_ORGANIZZATORE, NOME, COGNOME) VALUES (?, ?, ?, ?)";
-            const values = [idc, orga, nome, cognome];
-            db.query(query, values, (err, result)=>{
-              if(err){
-                console.error('Errore durante l\'inserimento dell\'invitato:', err);
-                io.emit('inserisci-record-response', '1');
-                reject(err);
-              }      
-              else{
-                if(check){
-                  const nC = generaNumeroCasuale();
-                  InserisciPagato(nC, idc, nome, cognome, 1);
-                  io.emit('inserisci-record-response', {response: 0, idp: nC});
-                }
-                console.log('Invitato inserito con successo con id: ' + idc + ' e id organizzatore: ' + orga);
-                const nuovaRiga = {id: idc, nome: nome, cognome: cognome};
-                io.emit('nuovaRiga', nuovaRiga);
-                io.emit('updateTot', {ido: orga, add: global.prezzo});
-                resolve(idc);
-              }
-            });
-            break;
-          } 
-          idc++;
+//Inserimento di un invitato
+  async function InserisciInvitatoT(nome, cognome, orga, check){
+    return new Promise((resolve, reject) => {
+      let idc = undefined;
+      let idTrovato = false;
+      for(let i=0; i<idInvitati.length; i++){
+        if(idInvitati[i] == undefined){
+          console.log("ID invitato libero trovato: " + i);
+          idc = idInvitati[i] = i;
+          idTrovato = true;
+          break;
         }
-        connection.end();
       }
-      findFreeID();
+      if(!idTrovato){
+        idc = idInvitati[idInvitati.length] = idInvitati.length;
+        console.log("Nuovo ID invitato generato: " + idc);
+      }
+
+      const query = "INSERT INTO invitati (ID, ID_ORGANIZZATORE, NOME, COGNOME) VALUES (?, ?, ?, ?)";
+      const values = [idc, orga, nome, cognome];
+      db.query(query, values, (err, result)=>{
+        if(err){
+          console.error('Errore durante l\'inserimento dell\'invitato:', err);
+          io.emit('inserisci-record-response', '1');
+          reject(err);
+        }      
+        else{
+          if(check){
+            const nC = generaNumeroCasuale();
+            InserisciPagato(nC, idc, nome, cognome, 1);
+            io.emit('inserisci-record-response', {response: 0, idp: nC});
+          }
+          idInvitati[idc] = idc;
+          console.log('Invitato inserito con successo con id: ' + idc + ' e id organizzatore: ' + orga);
+          const nuovaRiga = {id: idc, nome: nome, cognome: cognome};
+          io.emit('nuovaRiga', nuovaRiga);
+          io.emit('updateTot', {ido: orga, add: global.prezzo});
+          resolve(idc);
+        }
+      });
     });
   }
 
 //Inserimento nella tabella di un organizzatore
   socket.on('insreco', (data)=>{
+    let idc = 0;
+    let idTrovato = false;
+
+    for(let i=0; i<idOrganizzatori.length; i++){
+      if(idOrganizzatori[i] == undefined){
+        console.log("ID organizzatore libero trovato: " + i);
+        idc = idOrganizzatori[i] = i;
+        idTrovato = true;
+        break;
+      }
+    }
+    if(!idTrovato){
+      idc = idOrganizzatori[idOrganizzatori.length] = idOrganizzatori.length;
+      console.log("Nuovo ID organizzatore generato: " + idc);
+    }
+
     const nome = data.nome;
     const cognome = data.cognome;
-    async function findFreeIDo(){
-      const connection = await mysqlpr.createConnection({
-        host: global.HOST,
-        user: global.USER,
-        password: global.PSW,
-        database: global.DB
-      });
-      let idc = 0;
-      while(true){
-        const [rows] = await connection.query('SELECT ID FROM organizzatori WHERE ID = ?', [idc]);
-        if(rows.length === 0){
-          console.log('ID libero trovato:', idc);
-          db.query("INSERT INTO organizzatori (ID, NOME, COGNOME, TOTALE_SOLDI) VALUES (?, ?, ?, ?)", [idc, nome, cognome, "0"], (err, result)=>{
-            if(err){
-              console.error('Errore durante l\'inserimento dell\'organizzatore:', err);
-              io.emit('insrro', '1');
-            }      
-            else{
-              console.log('Organizzatore inserito con successo con id: ' + idc);
-              io.emit('insrro', '0');
-              const nuovaRigao = {id: idc, nome: nome, cognome: cognome, tots: 0};
-              io.emit('nuovaRigao', nuovaRigao);
-            }
-          });
-          break;
-        } 
-        idc++;
+    db.query("INSERT INTO organizzatori (ID, NOME, COGNOME, TOTALE_SOLDI) VALUES (?, ?, ?, ?)", [idc, nome, cognome, "0"], (err, result)=>{
+      if(err){
+        console.error('Errore durante l\'inserimento dell\'organizzatore:', err);
+        io.emit('insrro', '1');
+      }      
+      else{
+        console.log('Organizzatore inserito con successo con id: ' + idc);
+        io.emit('insrro', '0');
+        const nuovaRigao = {id: idc, nome: nome, cognome: cognome, tots: 0};
+        io.emit('nuovaRigao', nuovaRigao);
       }
-      connection.end();
-    }
-    findFreeIDo();
+    });
   });
 
 //Conferma pagamento della quota di iscrizione
@@ -722,16 +788,23 @@ io.on("connection",(socket)=>{
   async function t(data){
     try{
       const idp = await InserisciInvitatoT(data.nome, data.cognome, data.idorg, false);
+      console.log("IDP " + idp);
       const id = data.id;
       setTimeout(function(){
           db.query("UPDATE checkpagato SET PAGATO = ?, ID_PAGATO = ? WHERE ID = ?", [1, idp, id], (err, result)=>{
           if(err) console.error('Errore durante l\'inserimento dell\'invitato nella tabella non pagato:', err);      
           else console.log('Invitato modificato con successo nella tabella pagato con id: ' + idp);
           io.emit('EliminaRecordPagato', id);
+          console.log("ID " + id);
         });
         db.query("SELECT ID_TG FROM checkpagato WHERE ID = ?", id, (err, result)=>{
           if(err) console.error('Errore durante l\'inserimento dell\'invitato nella tabella non pagato:', err);      
-          else bot.sendMessage(result[0].ID_TG, "Stato: AGGIUNTO/A in lista");
+          else{
+            if(result[0].ID_TG != null){
+              bot.sendMessage(result[0].ID_TG, "STATO 🟩: AGGIUNTO/A in lista");
+              qrGenerator(result[0].ID_TG, data.id, data.nome, data.cognome);
+            }
+          }
           io.emit('AggiornaStatoPagamento', id);
         });
       },100);
@@ -742,20 +815,49 @@ io.on("connection",(socket)=>{
 //Modifica stato rimborso di un invitato
   socket.on('modchR', (id, stato)=>{
     db.query('UPDATE rimossi SET RIMBORSO = ? WHERE ID = ?', [stato, id], (err, results)=>{
-        if (err) throw err;
-        console.log("ID " + id + " - Dati salvati con successo, stato rimborso: " + stato);
-        const data = {id, stato};
-        io.emit('updcR', data);
+      if(err) throw err;
+      console.log("ID " + id + " - Dati salvati con successo, stato rimborso: " + (stato ? "SUCCESSO" : "FALLITO"));
+      if(stato==1){
+        var rimborsoId = generaIdRimborso();
+        const dataRimb = {id, rimborsoId};
+        io.emit('updIdRimborso', (dataRimb));
+        segnalaRimborso(id, rimborsoId);
+        db.query('UPDATE rimossi SET ID_RIMBORSO = ?, ID_TG = ? WHERE ID = ?', [rimborsoId, null, id], (err, results)=>{
+          if(err) throw err;
+          else console.log("ID rimborso generato: " + rimborsoId);
+        });
       }
-    );
+      const data = {id, stato};
+      io.emit('updcR', data);
+    });
   });
+
+//Funzione per generare e salvare gli id rimborso
+  function generaIdRimborso(){
+    let id;
+    do{
+      id = Math.floor(Math.random() * 100000000);
+    }while (idRimborso.has(id));
+
+    idRimborso.add(id);
+    return id;
+  }
+
+//Conferma rimborso tramite telegramBot
+  function segnalaRimborso(id, rimborsoId){
+    db.query('SELECT ID_TG FROM rimossi WHERE ID = ?', id, (err, results)=>{
+      if (err) throw err;
+      if(results[0].ID_TG != null) bot.sendMessage(results[0].ID_TG, "STATO 🟦: rimborso ESEGUITO con codice " + rimborsoId);
+      console.log("ID " + id + ", rimborso SEGNALATO");
+    });
+  }
 
 //Modifica del prezzo
   socket.on('modificaPrezzo', (prezzo)=>{
     db.query('UPDATE soldi SET PREZZO = ? WHERE ID = 0', [prezzo], (err, results)=>{
       if(err) throw err;
       else{
-        console.log("Prezzo modificato con successo");
+        console.log("Prezzo modificato con successo!");
         socket.emit('check-prezzo-response', {stato: 3, prezzo: null});
       }
     });
@@ -806,9 +908,9 @@ app.get('/idinvi',(par, res)=>{
   });
 });
 
-//Pagina gestione invitati rimossi da un organizzatori o autorimossi
+//Pagina gestione rimborsi rimossi da un organizzatori o autorimossi
 app.get('/invirimossi',(par, res)=>{
-  const query = 'SELECT ID, NOME, COGNOME, RIMBORSO FROM rimossi ORDER BY NOME ASC';
+  const query = 'SELECT ID, NOME, COGNOME, RIMBORSO, ID_RIMBORSO FROM rimossi ORDER BY NOME ASC';
   db.query(query,(err, results)=>{
     if(err){
       console.error('Errore nella query del database: ' + err.message);

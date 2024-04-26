@@ -12,6 +12,7 @@
             border: 4px solid #ccc;
             border-radius: 4px;
             font-size: 55px;
+            text-align: center;
         }
         .dark-mode .selez{
             background-color: #000000;
@@ -20,6 +21,7 @@
         .selez option{
             font-size: 30px;
             color: black;
+            text-align: center;
         }
         .dark-mode .selez option{color: white;}
         input::placeholder{text-align: center;}
@@ -361,7 +363,7 @@
     socket.on('nuovaRigaPagante', (nuovaRigaP)=>{
         const tabella = document.querySelector('#invitatiTable tbody');
         var row = document.createElement('tr');
-        row.id = nuovaRigaP.id;
+        row.id = nuovaRigaP.idp;
         if(document.body.classList.contains("dark-mode")) row.style.backgroundColor = "#969696";
         else row.style.backgroundColor = "#D6D6D6";
         

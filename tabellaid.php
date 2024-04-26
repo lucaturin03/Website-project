@@ -392,7 +392,8 @@
             var tab = document.getElementById('invitatiTable');
             var numeroRighe = tab.rows.length-1;
             var risultato = document.getElementById('ninv');
-            if(numeroRighe != 0) risultato.textContent = `N° INVITATI: ${numeroRighe}`;  
+            if(numeroRighe > 0) risultato.textContent = `N° INVITATI: ${numeroRighe}`;
+            else risultato.textContent = `NESSUN INVITATO`;
         }
         setInterval(contaInvi, 1000);
     });
